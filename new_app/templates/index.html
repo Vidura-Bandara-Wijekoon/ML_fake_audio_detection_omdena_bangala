@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fake Audio Detection</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: url('/static/i.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+        #buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007BFF;
+            color: #fff;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        #console {
+            width: 80%;
+            max-width: 600px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: rgba(30, 30, 30, 0.9);
+            height: 200px;
+            overflow-y: scroll;
+        }
+        .log {
+            margin: 0;
+            padding: 5px;
+            border-bottom: 1px solid #333;
+        }
+        .log.real {
+            color: green;
+        }
+        .log.fake {
+            color: red;
+        }
+        #notification {
+            position: fixed;
+            bottom: 50%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: red;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Fake Audio Detection</h1>
+    <div id="buttons">
+        <button id="startButton">Start Detection</button>
+        <button id="stopButton" disabled>Stop Detection</button>
+    </div>
+
+    <div id="console"></div>
+    <div id="notification">Fake Call Detected!</div>
+
+    <script>
+        let isDetecting = false;
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const consoleDiv = document.getElementById('console');
+        const notification = document.getElementById('notification');
+        let websocket = null;
+        let mediaRecorder = null;
+
+        function logMessage(message, type) {
+            const log = document.createElement('p');
+            log.className = `log ${type}`;
+            log.textContent = message;
+            consoleDiv.appendChild(log);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+        function showNotification() {
+            notification.style.display = 'block';
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 10000)
+        }
+
+        async function startDetection() {
+            if (isDetecting) {
+                logMessage('Detection is already running...', 'info');
+                return;
+            }
+            isDetecting = true;
+            logMessage('Starting detection...', 'info');
+            startButton.disabled = true;
+            stopButton.disabled = false;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                logMessage('Microphone access granted', 'info');
+
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                mediaRecorder.ondataavailable = function(event) {
+                    if (websocket && websocket.readyState === WebSocket.OPEN) {
+                        websocket.send(event.data);
+                    }
+                };
+
+                //const response = await fetch(`${window.location.origin}/start_detection`, {
+                const response = await fetch(`http://localhost:7860/start_detection`, {
+                    method: 'POST',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const result = await response.json();
+                logMessage(`Status: ${result.status}`, 'info');
+
+                // websocket = new WebSocket(`wss://${window.location.host}/ws`);
+                websocket = new WebSocket(`ws://localhost:7860/ws`);
+                websocket.onmessage = async function(event) {
+                    const data = event.data;
+                    if (data === 'global-fake') {
+                        logMessage(`The detection is being stopped, the audio is fake`);
+                        showNotification();
+                        await stopDetection();
+                    } else {
+                        logMessage(`Detected ${data} audio`, data);
+                    }
+                };
+                websocket.onclose = function() {
+                    logMessage('WebSocket connection closed', 'info');
+                };
+
+                mediaRecorder.start(3000);  // Start recording with 3-second intervals
+            } catch (error) {
+                logMessage(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function stopDetection() {
+            if (!isDetecting) {
+                logMessage('Detection is not running...', 'info');
+                return;
+            }
+            isDetecting = false;
+            logMessage('Stopping detection...', 'info');
+            startButton.disabled = false;
+            stopButton.disabled = true;
+
+            try {
+                if (mediaRecorder && mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                }
+
+                const response = await fetch(`${window.location.origin}/stop_detection`, {
+                    method: 'POST',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const result = await response.json();
+                logMessage(`Status: ${result.status}`, 'info');
+
+                if (websocket) {
+                    websocket.close();
+                    websocket = null;
+                }
+            } catch (error) {
+                logMessage(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        startButton.addEventListener('click', startDetection);
+        stopButton.addEventListener('click', stopDetection);
+    </script>
+</body>
+</html>
