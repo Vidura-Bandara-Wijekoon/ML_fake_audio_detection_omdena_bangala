@@ -1,7 +1,7 @@
 import os
 os.environ['NUMBA_CACHE_DIR'] = '/tmp/'
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -128,6 +128,34 @@ async def stop_detection():
     global is_detecting
     is_detecting = False
     return JSONResponse(content={'status': 'detection_stopped'})
+
+@app.post("/upload_audio/")
+async def upload_audio(file: UploadFile = File(...)):
+    try:
+
+        audio_data = await file.read()
+
+        audio_segment = AudioSegment.from_file(io.BytesIO(audio_data), format=file.filename.split('.')[-1])
+        wav_io = io.BytesIO()
+        audio_segment.export(wav_io, format="wav")
+        wav_io.seek(0)
+        audio, sr = sf.read(wav_io, dtype='float32')
+
+        if audio.ndim > 1:
+            audio = np.mean(audio, axis=1)
+
+        features = extract_features(audio)
+        features = features.reshape(1, -1)
+        
+        prediction = model.predict(features)
+        is_fake = prediction[0]
+        result = 'fake' if is_fake else 'real'
+        
+        return JSONResponse(content={'status': 'success', 'result': result})
+    
+    except Exception as e:
+        logger.error(f"Failed to process audio file: {e}")
+        return JSONResponse(content={'status': 'error', 'message': str(e)}, status_code=500)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

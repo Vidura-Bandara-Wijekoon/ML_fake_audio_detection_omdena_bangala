@@ -26,5 +26,4 @@ COPY . .
 # Expose the port that the FastAPI app runs on
 EXPOSE 7860
 
-# Run the FastAPI application with Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
