@@ -74,6 +74,26 @@
             border-radius: 5px;
             display: none;
         }
+        #fileUploadSection {
+            margin-top: 30px;
+            text-align: center;
+        }
+        #uploadButton {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #28a745;
+            color: #fff;
+            transition: background-color 0.3s;
+        }
+        #uploadButton:hover {
+            background-color: #218838;
+        }
+        #fileInput {
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -85,6 +105,13 @@
 
     <div id="console"></div>
     <div id="notification">Fake Call Detected!</div>
+
+    <div id="fileUploadSection">
+        <h2>Upload Audio for Detection</h2>
+        <input type="file" id="fileInput" accept="audio/*">
+        <button id="uploadButton">Upload and Detect</button>
+        <p id="uploadResult"></p>
+    </div>
 
     <script>
         let isDetecting = false;
@@ -131,8 +158,8 @@
                     }
                 };
 
-                //const response = await fetch(`${window.location.origin}/start_detection`, {
-                const response = await fetch(`http://localhost:7860/start_detection`, {
+                const response = await fetch(`${window.location.origin}/start_detection`, {
+                // const response = await fetch(`http://localhost:7860/start_detection`, {
                     method: 'POST',
                 });
 
@@ -143,8 +170,8 @@
                 const result = await response.json();
                 logMessage(`Status: ${result.status}`, 'info');
 
-                // websocket = new WebSocket(`wss://${window.location.host}/ws`);
-                websocket = new WebSocket(`ws://localhost:7860/ws`);
+                websocket = new WebSocket(`wss://${window.location.host}/ws`);
+                // websocket = new WebSocket(`ws://localhost:7860/ws`);
                 websocket.onmessage = async function(event) {
                     const data = event.data;
                     if (data === 'global-fake') {
@@ -202,6 +229,38 @@
 
         startButton.addEventListener('click', startDetection);
         stopButton.addEventListener('click', stopDetection);
+        
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+        const uploadResult = document.getElementById('uploadResult');
+
+        uploadButton.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                uploadResult.textContent = 'Please select a file first.';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${window.location.origin}/upload_audio/`, {
+                // const response = await fetch(`http://localhost:7860/upload_audio/`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const result = await response.json();
+                uploadResult.textContent = `Detected audio is: ${result.result}`;
+            } catch (error) {
+                uploadResult.textContent = `Error: ${error.message}`;
+            }
+        });
     </script>
 </body>
 </html>
